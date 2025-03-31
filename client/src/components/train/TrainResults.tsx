@@ -289,7 +289,7 @@ export default function TrainResults({
                       <div className="text-sm text-gray-500">Economy Class</div>
                     </div>
                     <Button 
-                      className="w-full bg-secondary-500 hover:bg-secondary-600"
+                      className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold shadow-md"
                       onClick={() => handleTrainSelect(route)}
                     >
                       Select

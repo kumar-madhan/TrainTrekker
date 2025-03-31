@@ -137,7 +137,7 @@ export default function SearchForm() {
                 <Button 
                   type="submit" 
                   size="lg"
-                  className="w-full sm:w-auto bg-secondary-500 hover:bg-secondary-600"
+                  className="w-full sm:w-auto bg-orange-500 hover:bg-orange-600 text-white font-semibold shadow-md"
                 >
                   <Search className="mr-2 h-4 w-4" /> Search Trains
                 </Button>
