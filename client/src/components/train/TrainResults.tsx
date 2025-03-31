@@ -12,7 +12,10 @@ import {
   ArrowUpDown,
   Calendar,
   ArrowDown,
-  ArrowUp
+  ArrowUp,
+  XCircle,
+  RefreshCw,
+  ArrowLeft
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -39,6 +42,7 @@ export default function TrainResults({
 
   const { data: routes, isLoading, error } = useQuery<RouteWithDetails[]>({
     queryKey: ['/api/routes/search', { from: fromStation, to: toStation, date }],
+    enabled: !!fromStation && !!toStation && !!date, // Only run the query if all parameters are provided
   });
 
   const formattedDate = new Date(date).toLocaleDateString('en-US', {
@@ -84,9 +88,32 @@ export default function TrainResults({
     return (
       <div className="py-12 bg-gray-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center text-red-500">
-            Error loading search results: {error instanceof Error ? error.message : 'Unknown error'}
-          </div>
+          <Card className="p-6">
+            <div className="flex items-start">
+              <XCircle className="h-6 w-6 text-red-500 mr-3 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-lg font-medium mb-2">Unable to Load Train Results</h3>
+                <p className="text-gray-600 mb-4">
+                  We couldn't find any trains for this search. Please try again with different criteria.
+                </p>
+                <p className="text-sm text-gray-500 mb-4">
+                  Error details: {error instanceof Error ? error.message : 'Unknown error'}
+                </p>
+                <Button 
+                  onClick={() => window.location.reload()}
+                  className="bg-primary-600 hover:bg-primary-700 mr-2"
+                >
+                  <RefreshCw className="mr-1 h-4 w-4" /> Retry Search
+                </Button>
+                <Button 
+                  variant="outline"
+                  onClick={() => window.history.back()}
+                >
+                  <ArrowLeft className="mr-1 h-4 w-4" /> Go Back
+                </Button>
+              </div>
+            </div>
+          </Card>
         </div>
       </div>
     );
