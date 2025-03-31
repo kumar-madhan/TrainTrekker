@@ -1,289 +1,303 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/use-auth";
-import { format } from "date-fns";
-import Navbar from "@/components/layout/navbar";
-import Footer from "@/components/layout/footer";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Skeleton } from "@/components/ui/skeleton";
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import Header from '@/components/layout/Header';
+import Footer from '@/components/layout/Footer';
 import { 
-  User, Clock, CreditCard, MapPin, Ticket, 
-  ChevronDown, ChevronUp, Eye, FileText,
-  FileSearch, AlertTriangle
-} from "lucide-react";
-import { useReactToPrint } from "react-to-print";
-import { useRef } from "react";
-import Confirmation from "@/components/booking/confirmation";
+  User, 
+  Ticket, 
+  Clock, 
+  CalendarDays, 
+  UserCircle, 
+  Mail, 
+  Phone, 
+  Download,
+  Printer,
+  Eye
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { useAuth } from '@/hooks/use-auth';
+import { BookingWithDetails } from '@shared/schema';
 
 export default function ProfilePage() {
   const { user } = useAuth();
-  const [selectedBooking, setSelectedBooking] = useState<number | null>(null);
-  const ticketRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState('bookings');
   
-  // Fetch user bookings
-  const { data: bookings, isLoading: isLoadingBookings } = useQuery({
+  const { data: bookings, isLoading } = useQuery<BookingWithDetails[]>({
     queryKey: ['/api/bookings'],
   });
-  
-  // Fetch detailed booking when selected
-  const { data: selectedBookingDetails, isLoading: isLoadingDetails } = useQuery({
-    queryKey: [`/api/bookings/${selectedBooking}`],
-    enabled: selectedBooking !== null
-  });
-  
-  const handlePrintTicket = useReactToPrint({
-    content: () => ticketRef.current,
-    documentTitle: `RailConnect_Ticket_${selectedBooking}`,
-  });
-  
-  const toggleBookingDetails = (bookingId: number) => {
-    if (selectedBooking === bookingId) {
-      setSelectedBooking(null);
-    } else {
-      setSelectedBooking(bookingId);
-    }
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric'
+    });
   };
-  
+
+  const formatPrice = (price: number) => {
+    return `$${(price / 100).toFixed(2)}`;
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar />
-      <main className="flex-grow container mx-auto px-4 py-8">
-        <div className="max-w-6xl mx-auto">
-          <h1 className="text-2xl font-bold mb-6">My Profile</h1>
+      <Header />
+      
+      <main className="flex-grow py-12 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="mb-8">
+            <h1 className="text-3xl font-heading font-bold text-gray-900">My Profile</h1>
+            <p className="text-gray-600">Manage your account and bookings</p>
+          </div>
           
-          <Tabs defaultValue="bookings" className="space-y-6">
-            <TabsList>
-              <TabsTrigger value="bookings">My Bookings</TabsTrigger>
-              <TabsTrigger value="profile">Profile Information</TabsTrigger>
-              <TabsTrigger value="preferences">Preferences</TabsTrigger>
-            </TabsList>
-            
-            <TabsContent value="bookings" className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Sidebar */}
+            <div className="md:col-span-1">
               <Card>
-                <CardHeader>
-                  <CardTitle>My Bookings</CardTitle>
-                  <CardDescription>View and manage your train bookings</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isLoadingBookings ? (
-                    <div className="space-y-4">
-                      {[1, 2, 3].map(i => (
-                        <div key={i} className="flex flex-col space-y-3">
-                          <div className="flex justify-between">
-                            <Skeleton className="h-5 w-32" />
-                            <Skeleton className="h-5 w-24" />
-                          </div>
-                          <div className="flex justify-between">
-                            <Skeleton className="h-10 w-48" />
-                            <Skeleton className="h-10 w-32" />
-                          </div>
-                          <Skeleton className="h-px w-full bg-neutral-200" />
-                        </div>
-                      ))}
+                <CardContent className="p-6">
+                  <div className="flex flex-col items-center mb-6">
+                    <div className="h-24 w-24 rounded-full bg-primary-100 text-primary-600 flex items-center justify-center mb-4">
+                      <UserCircle className="h-16 w-16" />
                     </div>
-                  ) : bookings && bookings.length > 0 ? (
-                    <div className="space-y-4">
-                      {bookings.map((booking: any) => (
-                        <div key={booking.id} className="border rounded-lg overflow-hidden">
-                          <div 
-                            className="flex flex-col md:flex-row md:items-center justify-between p-4 cursor-pointer hover:bg-neutral-50"
-                            onClick={() => toggleBookingDetails(booking.id)}
-                          >
-                            <div className="flex items-start space-x-3">
-                              <Ticket className="h-5 w-5 text-primary mt-1" />
-                              <div>
-                                <div className="font-medium">Booking #{booking.id}</div>
-                                <div className="text-sm text-neutral-500">
-                                  {format(new Date(booking.bookingDate), "d MMM yyyy")}
-                                </div>
-                              </div>
-                            </div>
-                            
-                            <div className="flex items-center space-x-4 mt-4 md:mt-0">
-                              <Badge variant={
-                                booking.status === "Confirmed" ? "success" : 
-                                booking.status === "Pending" ? "warning" : 
-                                "destructive"
-                              }>
-                                {booking.status}
-                              </Badge>
-                              
-                              <div className="text-lg font-semibold">${booking.totalPrice}</div>
-                              
-                              {selectedBooking === booking.id ? (
-                                <ChevronUp className="h-5 w-5 text-neutral-500" />
-                              ) : (
-                                <ChevronDown className="h-5 w-5 text-neutral-500" />
-                              )}
-                            </div>
-                          </div>
-                          
-                          {selectedBooking === booking.id && (
-                            <div className="border-t p-4 bg-neutral-50">
-                              {isLoadingDetails ? (
-                                <div className="space-y-4 p-4">
-                                  <Skeleton className="h-8 w-64" />
-                                  <Skeleton className="h-4 w-full" />
-                                  <Skeleton className="h-4 w-full" />
-                                  <Skeleton className="h-4 w-2/3" />
-                                </div>
-                              ) : selectedBookingDetails ? (
-                                <div>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                                    <div>
-                                      <div className="text-sm text-neutral-500">Train</div>
-                                      <div className="font-medium">
-                                        {selectedBookingDetails.schedule?.train?.name} 
-                                        ({selectedBookingDetails.schedule?.train?.trainNumber})
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-sm text-neutral-500">Departure</div>
-                                      <div className="font-medium">
-                                        {format(new Date(selectedBookingDetails.schedule?.departureTime), "EEE, d MMM yyyy, HH:mm")}
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-sm text-neutral-500">Passengers</div>
-                                      <div className="font-medium">
-                                        {selectedBookingDetails.passengers?.length} passenger(s)
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  <div ref={ticketRef}>
-                                    <Confirmation booking={selectedBookingDetails} />
-                                  </div>
-                                  
-                                  <div className="flex flex-wrap gap-3 mt-4">
-                                    <Button size="sm" onClick={handlePrintTicket}>
-                                      <FileText className="mr-2 h-4 w-4" />
-                                      Print Ticket
-                                    </Button>
-                                    <Button size="sm" variant="outline">
-                                      <FileSearch className="mr-2 h-4 w-4" />
-                                      View Details
-                                    </Button>
-                                    {selectedBookingDetails.status !== "Cancelled" && (
-                                      <Button size="sm" variant="destructive">
-                                        <AlertTriangle className="mr-2 h-4 w-4" />
-                                        Cancel Booking
-                                      </Button>
-                                    )}
-                                  </div>
-                                </div>
-                              ) : (
-                                <div className="text-center py-4 text-neutral-500">
-                                  Unable to load booking details
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12 bg-neutral-50 rounded-lg">
-                      <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-neutral-100 mb-4">
-                        <Ticket className="h-8 w-8 text-neutral-400" />
-                      </div>
-                      <h3 className="text-lg font-medium mb-2">No bookings yet</h3>
-                      <p className="text-neutral-500 mb-4">Your booking history will appear here when you make a booking.</p>
-                      <Button variant="outline">Book Your First Trip</Button>
-                    </div>
-                  )}
+                    <h2 className="text-xl font-medium">{user?.firstName} {user?.lastName}</h2>
+                    <p className="text-gray-500">{user?.email}</p>
+                  </div>
+                  
+                  <Tabs 
+                    defaultValue={activeTab} 
+                    onValueChange={setActiveTab} 
+                    orientation="vertical" 
+                    className="w-full"
+                  >
+                    <TabsList className="flex flex-col items-start w-full bg-transparent border-r h-auto p-0">
+                      <TabsTrigger 
+                        value="bookings" 
+                        className="justify-start w-full px-3 py-2 data-[state=active]:bg-primary-50 data-[state=active]:text-primary-600 data-[state=active]:border-r-2 data-[state=active]:border-primary-600 rounded-none"
+                      >
+                        <Ticket className="mr-2 h-4 w-4" />
+                        My Bookings
+                      </TabsTrigger>
+                      <TabsTrigger 
+                        value="profile" 
+                        className="justify-start w-full px-3 py-2 data-[state=active]:bg-primary-50 data-[state=active]:text-primary-600 data-[state=active]:border-r-2 data-[state=active]:border-primary-600 rounded-none"
+                      >
+                        <User className="mr-2 h-4 w-4" />
+                        Profile Details
+                      </TabsTrigger>
+                    </TabsList>
+                  </Tabs>
                 </CardContent>
               </Card>
-            </TabsContent>
+            </div>
             
-            <TabsContent value="profile">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Profile Information</CardTitle>
-                  <CardDescription>Manage your personal information</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    <div className="flex flex-col space-y-2">
-                      <div className="text-sm text-neutral-500">Username</div>
-                      <div className="font-medium">{user?.username}</div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div className="flex flex-col space-y-2">
-                        <div className="text-sm text-neutral-500">First Name</div>
-                        <div className="font-medium">{user?.firstName}</div>
+            {/* Main Content */}
+            <div className="md:col-span-3">
+              <TabsContent value="bookings" className="mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>My Bookings</CardTitle>
+                    <CardDescription>View and manage your train bookings</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isLoading ? (
+                      <p className="text-center py-8 text-gray-500">Loading your bookings...</p>
+                    ) : !bookings || bookings.length === 0 ? (
+                      <div className="text-center py-8">
+                        <Ticket className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-1">No bookings yet</h3>
+                        <p className="text-gray-500 mb-4">You haven't made any bookings yet.</p>
+                        <Button>Book Your First Trip</Button>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Booking ID</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>From - To</TableHead>
+                              <TableHead>Train</TableHead>
+                              <TableHead>Price</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead>Actions</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {bookings.map((booking) => (
+                              <TableRow key={booking.id}>
+                                <TableCell className="font-medium">
+                                  #{booking.bookingReference}
+                                </TableCell>
+                                <TableCell>{formatDate(booking.route.date)}</TableCell>
+                                <TableCell>
+                                  {booking.route.fromStation.name} - {booking.route.toStation.name}
+                                </TableCell>
+                                <TableCell>{booking.route.train.name}</TableCell>
+                                <TableCell>{formatPrice(booking.totalPrice)}</TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant="outline"
+                                    className={`
+                                      ${booking.status === 'confirmed' ? 'bg-green-100 text-green-800 hover:bg-green-100' : ''}
+                                      ${booking.status === 'cancelled' ? 'bg-red-100 text-red-800 hover:bg-red-100' : ''}
+                                      ${booking.status === 'completed' ? 'bg-gray-100 text-gray-800 hover:bg-gray-100' : ''}
+                                    `}
+                                  >
+                                    {booking.status.charAt(0).toUpperCase() + booking.status.slice(1)}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex space-x-1">
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Eye className="h-4 w-4" />
+                                      <span className="sr-only">View</span>
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Download className="h-4 w-4" />
+                                      <span className="sr-only">Download</span>
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm" 
+                                      className="h-8 w-8 p-0"
+                                    >
+                                      <Printer className="h-4 w-4" />
+                                      <span className="sr-only">Print</span>
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              
+              <TabsContent value="profile" className="mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Profile Details</CardTitle>
+                    <CardDescription>View and edit your personal information</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form className="space-y-6">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            First Name
+                          </label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input 
+                              className="pl-10" 
+                              defaultValue={user?.firstName || ''}
+                              disabled 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Last Name
+                          </label>
+                          <Input defaultValue={user?.lastName || ''} disabled />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Email
+                          </label>
+                          <div className="relative">
+                            <Mail className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input 
+                              className="pl-10" 
+                              defaultValue={user?.email || ''}
+                              disabled 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Phone Number
+                          </label>
+                          <div className="relative">
+                            <Phone className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input 
+                              className="pl-10" 
+                              defaultValue={user?.phone || ''}
+                              disabled 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Username
+                          </label>
+                          <div className="relative">
+                            <UserCircle className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input 
+                              className="pl-10" 
+                              defaultValue={user?.username || ''}
+                              disabled 
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Account Created
+                          </label>
+                          <div className="relative">
+                            <CalendarDays className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                            <Input 
+                              className="pl-10" 
+                              defaultValue={user?.createdAt ? formatDate(user.createdAt.toString()) : ''}
+                              disabled 
+                            />
+                          </div>
+                        </div>
                       </div>
                       
-                      <div className="flex flex-col space-y-2">
-                        <div className="text-sm text-neutral-500">Last Name</div>
-                        <div className="font-medium">{user?.lastName}</div>
+                      <div className="border-t pt-6">
+                        <h3 className="text-lg font-medium mb-4">Account Actions</h3>
+                        <div className="space-x-4">
+                          <Button className="bg-primary-600 hover:bg-primary-700">
+                            Edit Profile
+                          </Button>
+                          <Button variant="outline">
+                            Change Password
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                    
-                    <div className="flex flex-col space-y-2">
-                      <div className="text-sm text-neutral-500">Email</div>
-                      <div className="font-medium">{user?.email}</div>
-                    </div>
-                    
-                    <div className="flex justify-end">
-                      <Button>Update Profile</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-            
-            <TabsContent value="preferences">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Travel Preferences</CardTitle>
-                  <CardDescription>Customize your travel experience</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-6">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <MapPin className="h-5 w-5 text-neutral-500" />
-                        <span>Save preferred stations</span>
-                      </div>
-                      <Button variant="outline" size="sm">Manage</Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <User className="h-5 w-5 text-neutral-500" />
-                        <span>Saved passenger information</span>
-                      </div>
-                      <Button variant="outline" size="sm">Manage</Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <CreditCard className="h-5 w-5 text-neutral-500" />
-                        <span>Payment methods</span>
-                      </div>
-                      <Button variant="outline" size="sm">Manage</Button>
-                    </div>
-                    
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-2">
-                        <Clock className="h-5 w-5 text-neutral-500" />
-                        <span>Notification preferences</span>
-                      </div>
-                      <Button variant="outline" size="sm">Manage</Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
+                    </form>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            </div>
+          </div>
         </div>
       </main>
+      
       <Footer />
     </div>
   );

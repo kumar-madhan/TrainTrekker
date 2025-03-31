@@ -1,421 +1,485 @@
-import { users, trains, stations, routes, trainSchedules, seats, bookings, passengers } from "@shared/schema";
-import type { User, InsertUser, Train, InsertTrain, Station, InsertStation, 
-  Route, InsertRoute, TrainSchedule, InsertTrainSchedule, 
-  Seat, InsertSeat, Booking, InsertBooking, Passenger, InsertPassenger } from "@shared/schema";
+import { 
+  User, InsertUser, 
+  Train, InsertTrain, 
+  Station, InsertStation, 
+  Route, InsertRoute, RouteWithDetails,
+  Seat, InsertSeat, 
+  Booking, InsertBooking, BookingWithDetails
+} from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 
 const MemoryStore = createMemoryStore(session);
 
+// Export storage interface
 export interface IStorage {
-  // User operations
+  // Session store
+  sessionStore: session.SessionStore;
+
+  // User methods
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
-  getUserByEmail(email: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
-  getAllUsers(): Promise<User[]>;
   
-  // Train operations
+  // Train methods
   getTrain(id: number): Promise<Train | undefined>;
   getTrainByNumber(trainNumber: string): Promise<Train | undefined>;
   createTrain(train: InsertTrain): Promise<Train>;
-  updateTrain(id: number, train: Partial<InsertTrain>): Promise<Train | undefined>;
-  deleteTrain(id: number): Promise<boolean>;
+  updateTrainStatus(id: number, status: string): Promise<Train>;
   getAllTrains(): Promise<Train[]>;
   
-  // Station operations
+  // Station methods
   getStation(id: number): Promise<Station | undefined>;
-  getStationByCode(code: string): Promise<Station | undefined>;
+  getStationByName(name: string): Promise<Station | undefined>;
   createStation(station: InsertStation): Promise<Station>;
   getAllStations(): Promise<Station[]>;
   
-  // Route operations
-  getRoute(id: number): Promise<Route | undefined>;
+  // Route methods
+  getRoute(id: number): Promise<RouteWithDetails | undefined>;
   createRoute(route: InsertRoute): Promise<Route>;
-  getFeaturedRoutes(): Promise<Route[]>;
-  getAllRoutes(): Promise<Route[]>;
+  getRoutesByTrainId(trainId: number): Promise<RouteWithDetails[]>;
+  searchRoutes(fromStation: string, toStation: string, date: string): Promise<RouteWithDetails[]>;
+  getPopularRoutes(): Promise<RouteWithDetails[]>;
   
-  // TrainSchedule operations
-  getTrainSchedule(id: number): Promise<TrainSchedule | undefined>;
-  createTrainSchedule(schedule: InsertTrainSchedule): Promise<TrainSchedule>;
-  searchTrainSchedules(fromStationId: number, toStationId: number, date: Date): Promise<TrainSchedule[]>;
-  getAllTrainSchedules(): Promise<TrainSchedule[]>;
-  
-  // Seat operations
+  // Seat methods
   getSeat(id: number): Promise<Seat | undefined>;
   createSeat(seat: InsertSeat): Promise<Seat>;
-  updateSeat(id: number, seat: Partial<InsertSeat>): Promise<Seat | undefined>;
-  getAvailableSeatsForTrain(trainId: number, scheduleId: number): Promise<Seat[]>;
+  getSeatsByTrainId(trainId: number): Promise<Seat[]>;
+  updateSeatStatus(id: number, status: string): Promise<Seat>;
   
-  // Booking operations
-  getBooking(id: number): Promise<Booking | undefined>;
+  // Booking methods
+  getBooking(id: number): Promise<BookingWithDetails | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
-  getUserBookings(userId: number): Promise<Booking[]>;
-  updateBookingStatus(id: number, status: string): Promise<Booking | undefined>;
-  getAllBookings(): Promise<Booking[]>;
-  
-  // Passenger operations
-  getPassenger(id: number): Promise<Passenger | undefined>;
-  createPassenger(passenger: InsertPassenger): Promise<Passenger>;
-  getBookingPassengers(bookingId: number): Promise<Passenger[]>;
-  
-  // Session store
-  sessionStore: session.SessionStore;
+  getBookingsByUserId(userId: number): Promise<BookingWithDetails[]>;
+  updateBookingStatus(id: number, status: string): Promise<Booking>;
+  getAllBookings(): Promise<BookingWithDetails[]>;
 }
 
+// Memory Storage Implementation
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private trains: Map<number, Train>;
   private stations: Map<number, Station>;
   private routes: Map<number, Route>;
-  private trainSchedules: Map<number, TrainSchedule>;
   private seats: Map<number, Seat>;
   private bookings: Map<number, Booking>;
-  private passengers: Map<number, Passenger>;
+  sessionStore: session.SessionStore;
   
-  public sessionStore: session.SessionStore;
-  
-  // Auto-increment IDs
-  private userId: number;
-  private trainId: number;
-  private stationId: number;
-  private routeId: number;
-  private scheduleId: number;
-  private seatId: number;
-  private bookingId: number;
-  private passengerId: number;
-  
+  private userIdCounter: number;
+  private trainIdCounter: number;
+  private stationIdCounter: number;
+  private routeIdCounter: number;
+  private seatIdCounter: number;
+  private bookingIdCounter: number;
+
   constructor() {
     this.users = new Map();
     this.trains = new Map();
     this.stations = new Map();
     this.routes = new Map();
-    this.trainSchedules = new Map();
     this.seats = new Map();
     this.bookings = new Map();
-    this.passengers = new Map();
     
-    this.userId = 1;
-    this.trainId = 1;
-    this.stationId = 1;
-    this.routeId = 1;
-    this.scheduleId = 1;
-    this.seatId = 1;
-    this.bookingId = 1;
-    this.passengerId = 1;
+    this.userIdCounter = 1;
+    this.trainIdCounter = 1;
+    this.stationIdCounter = 1;
+    this.routeIdCounter = 1;
+    this.seatIdCounter = 1;
+    this.bookingIdCounter = 1;
     
     this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000 // Clear expired sessions every 24h
+      checkPeriod: 86400000 // prune expired entries every 24h
     });
     
-    // Initialize with sample data
-    this.initializeSampleData();
+    // Initialize with some sample data
+    this.initializeData();
   }
-  
-  private initializeSampleData() {
-    // Create admin user
-    this.createUser({
+
+  private async initializeData() {
+    // Add admin user
+    await this.createUser({
       username: "admin",
-      password: "admin_password", // This will be hashed in auth.ts
-      email: "admin@railconnect.com",
+      password: "$2b$10$XmSdrG5JB3NQGiJUrdXvUuWYQBFHexmMWNjmONPUUzQPTYvXkcyS2", // "admin123"
       firstName: "Admin",
       lastName: "User",
-      isAdmin: true
+      email: "admin@railconnect.com",
+      role: "admin"
     });
     
-    // Create sample stations
-    const stations = [
-      { name: "New York Penn Station", code: "NYP", city: "New York" },
-      { name: "Boston South Station", code: "BOS", city: "Boston" },
-      { name: "Chicago Union Station", code: "CHI", city: "Chicago" },
-      { name: "Washington Union Station", code: "WAS", city: "Washington D.C." },
-      { name: "Philadelphia 30th Street Station", code: "PHL", city: "Philadelphia" },
-      { name: "Los Angeles Union Station", code: "LAX", city: "Los Angeles" },
-      { name: "Seattle King Street Station", code: "SEA", city: "Seattle" },
-      { name: "Portland Union Station", code: "PDX", city: "Portland" },
-      { name: "San Francisco Salesforce Transit Center", code: "SFC", city: "San Francisco" },
-      { name: "Denver Union Station", code: "DEN", city: "Denver" }
-    ];
+    // Add sample stations
+    const newYork = await this.createStation({ name: "New York", city: "New York" });
+    const boston = await this.createStation({ name: "Boston", city: "Boston" });
+    const chicago = await this.createStation({ name: "Chicago", city: "Chicago" });
+    const detroit = await this.createStation({ name: "Detroit", city: "Detroit" });
+    const losAngeles = await this.createStation({ name: "Los Angeles", city: "Los Angeles" });
+    const sanFrancisco = await this.createStation({ name: "San Francisco", city: "San Francisco" });
     
-    stations.forEach(station => {
-      this.createStation(station);
+    // Add sample trains
+    const northeastRegional = await this.createTrain({
+      trainNumber: "NE-238",
+      name: "Northeast Regional",
+      type: "Express",
+      capacity: 350,
+      amenities: ["Wi-Fi", "Dining", "Accessible"],
+      status: "active"
     });
     
-    // Create sample trains
-    const trains = [
-      { name: "Northeast Express", trainNumber: "NE-135", type: "Express", totalSeats: 300, amenities: ["WiFi", "Power Outlets", "Food Service"] },
-      { name: "Atlantic Regional", trainNumber: "AR-242", type: "Regional", totalSeats: 250, amenities: ["WiFi", "Power Outlets"] },
-      { name: "Boston Flyer", trainNumber: "BF-310", type: "Express", totalSeats: 280, amenities: ["WiFi", "Power Outlets", "Food Service"] },
-      { name: "Capitol Limited", trainNumber: "CL-123", type: "Express", totalSeats: 320, amenities: ["WiFi", "Power Outlets", "Food Service", "Sleeper Cars"] },
-      { name: "Pacific Surfliner", trainNumber: "PS-567", type: "Regional", totalSeats: 200, amenities: ["WiFi", "Power Outlets", "Bicycle Storage"] }
-    ];
-    
-    trains.forEach(train => {
-      this.createTrain(train);
+    const coastalLine = await this.createTrain({
+      trainNumber: "CL-445",
+      name: "Coastal Line",
+      type: "Regular",
+      capacity: 280,
+      amenities: ["Wi-Fi", "Power", "Accessible"],
+      status: "active"
     });
     
-    // Create sample routes
-    const routeData = [
-      { departureStationId: 1, arrivalStationId: 2, distance: 350, featured: true }, // NY to Boston
-      { departureStationId: 3, arrivalStationId: 4, distance: 750, featured: true }, // Chicago to Washington
-      { departureStationId: 7, arrivalStationId: 8, distance: 280, featured: true }, // Seattle to Portland
-      { departureStationId: 6, arrivalStationId: 9, distance: 620, featured: false }, // LA to San Francisco
-      { departureStationId: 2, arrivalStationId: 5, distance: 420, featured: false } // Boston to Philadelphia
-    ];
-    
-    routeData.forEach(route => {
-      this.createRoute(route);
+    const cityExpress = await this.createTrain({
+      trainNumber: "CE-512",
+      name: "City Express",
+      type: "Express",
+      capacity: 320,
+      amenities: ["Wi-Fi", "Movies", "Power"],
+      status: "maintenance"
     });
     
-    // Create sample schedules
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    const schedules = [
-      { trainId: 1, routeId: 1, departureTime: new Date(tomorrow.setHours(7, 30)), arrivalTime: new Date(tomorrow.setHours(10, 15)), basePrice: 49, availableSeats: 285 },
-      { trainId: 2, routeId: 1, departureTime: new Date(tomorrow.setHours(9, 45)), arrivalTime: new Date(tomorrow.setHours(12, 55)), basePrice: 39, availableSeats: 235 },
-      { trainId: 3, routeId: 1, departureTime: new Date(tomorrow.setHours(13, 15)), arrivalTime: new Date(tomorrow.setHours(16, 5)), basePrice: 65, availableSeats: 260 },
-      { trainId: 4, routeId: 2, departureTime: new Date(tomorrow.setHours(8, 0)), arrivalTime: new Date(tomorrow.setHours(16, 30)), basePrice: 120, availableSeats: 300 },
-      { trainId: 5, routeId: 3, departureTime: new Date(tomorrow.setHours(11, 30)), arrivalTime: new Date(tomorrow.setHours(14, 45)), basePrice: 39, availableSeats: 185 }
-    ];
-    
-    schedules.forEach(schedule => {
-      this.createTrainSchedule(schedule);
+    // Add sample routes
+    await this.createRoute({
+      trainId: northeastRegional.id,
+      fromStationId: newYork.id,
+      toStationId: boston.id,
+      departureTime: "06:30",
+      arrivalTime: "10:15",
+      duration: "3h 45m",
+      price: 4900,  // $49.00
+      date: "2023-10-10",
+      availableSeats: 312
     });
     
-    // Create sample seats for first train
-    const seatTypes = ["Standard", "Business", "First Class"];
-    const coaches = ["A", "B", "C", "D"];
+    await this.createRoute({
+      trainId: coastalLine.id,
+      fromStationId: newYork.id,
+      toStationId: boston.id,
+      departureTime: "08:15",
+      arrivalTime: "12:30",
+      duration: "4h 15m",
+      price: 3800,  // $38.00
+      date: "2023-10-10",
+      availableSeats: 245
+    });
     
-    for (let i = 1; i <= 20; i++) { // 20 seats for demo
-      for (const coach of coaches) {
-        const seatType = i <= 10 ? "Standard" : (i <= 15 ? "Business" : "First Class");
-        this.createSeat({
-          trainId: 1,
-          seatNumber: `${i}`,
-          coach: coach,
-          seatType: seatType,
-          isAvailable: true
-        });
+    await this.createRoute({
+      trainId: cityExpress.id,
+      fromStationId: newYork.id,
+      toStationId: boston.id,
+      departureTime: "10:45",
+      arrivalTime: "14:20",
+      duration: "3h 35m",
+      price: 5500,  // $55.00
+      date: "2023-10-10",
+      availableSeats: 298
+    });
+    
+    await this.createRoute({
+      trainId: northeastRegional.id,
+      fromStationId: chicago.id,
+      toStationId: detroit.id,
+      departureTime: "07:15",
+      arrivalTime: "11:35",
+      duration: "4h 20m",
+      price: 3800,  // $38.00
+      date: "2023-10-12",
+      availableSeats: 325
+    });
+    
+    await this.createRoute({
+      trainId: coastalLine.id,
+      fromStationId: losAngeles.id,
+      toStationId: sanFrancisco.id,
+      departureTime: "08:30",
+      arrivalTime: "14:00",
+      duration: "5h 30m",
+      price: 5900,  // $59.00
+      date: "2023-10-15",
+      availableSeats: 255
+    });
+    
+    // Add seats for Northeast Regional train
+    const seatLetters = ['A', 'B', 'C', 'D', 'E'];
+    for (let carNum = 5; carNum <= 8; carNum++) {
+      for (let row = 1; row <= 20; row++) {
+        for (let letterIndex = 0; letterIndex < seatLetters.length; letterIndex++) {
+          const seatNum = `${row}${seatLetters[letterIndex]}`;
+          await this.createSeat({
+            trainId: northeastRegional.id,
+            carNumber: carNum.toString(),
+            seatNumber: seatNum,
+            status: "available"
+          });
+        }
       }
     }
   }
-  
-  // User operations
+
+  // User methods
   async getUser(id: number): Promise<User | undefined> {
     return this.users.get(id);
   }
-  
+
   async getUserByUsername(username: string): Promise<User | undefined> {
     return Array.from(this.users.values()).find(
-      (user) => user.username === username
+      (user) => user.username.toLowerCase() === username.toLowerCase()
     );
   }
-  
-  async getUserByEmail(email: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.email === email
-    );
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const id = this.userIdCounter++;
+    const createdAt = new Date();
+    const user: User = { id, ...insertUser, createdAt };
+    this.users.set(id, user);
+    return user;
   }
-  
-  async createUser(user: InsertUser): Promise<User> {
-    const id = this.userId++;
-    const newUser: User = { ...user, id, createdAt: new Date() };
-    this.users.set(id, newUser);
-    return newUser;
-  }
-  
-  async getAllUsers(): Promise<User[]> {
-    return Array.from(this.users.values());
-  }
-  
-  // Train operations
+
+  // Train methods
   async getTrain(id: number): Promise<Train | undefined> {
     return this.trains.get(id);
   }
-  
+
   async getTrainByNumber(trainNumber: string): Promise<Train | undefined> {
     return Array.from(this.trains.values()).find(
       (train) => train.trainNumber === trainNumber
     );
   }
-  
-  async createTrain(train: InsertTrain): Promise<Train> {
-    const id = this.trainId++;
-    const newTrain: Train = { ...train, id };
-    this.trains.set(id, newTrain);
-    return newTrain;
+
+  async createTrain(insertTrain: InsertTrain): Promise<Train> {
+    const id = this.trainIdCounter++;
+    const train: Train = { id, ...insertTrain };
+    this.trains.set(id, train);
+    return train;
   }
-  
-  async updateTrain(id: number, trainData: Partial<InsertTrain>): Promise<Train | undefined> {
+
+  async updateTrainStatus(id: number, status: string): Promise<Train> {
     const train = this.trains.get(id);
-    if (!train) return undefined;
+    if (!train) {
+      throw new Error("Train not found");
+    }
     
-    const updatedTrain: Train = { ...train, ...trainData };
+    const updatedTrain = { ...train, status };
     this.trains.set(id, updatedTrain);
     return updatedTrain;
   }
-  
-  async deleteTrain(id: number): Promise<boolean> {
-    return this.trains.delete(id);
-  }
-  
+
   async getAllTrains(): Promise<Train[]> {
     return Array.from(this.trains.values());
   }
-  
-  // Station operations
+
+  // Station methods
   async getStation(id: number): Promise<Station | undefined> {
     return this.stations.get(id);
   }
-  
-  async getStationByCode(code: string): Promise<Station | undefined> {
+
+  async getStationByName(name: string): Promise<Station | undefined> {
     return Array.from(this.stations.values()).find(
-      (station) => station.code === code
+      (station) => station.name.toLowerCase() === name.toLowerCase()
     );
   }
-  
-  async createStation(station: InsertStation): Promise<Station> {
-    const id = this.stationId++;
-    const newStation: Station = { ...station, id };
-    this.stations.set(id, newStation);
-    return newStation;
+
+  async createStation(insertStation: InsertStation): Promise<Station> {
+    const id = this.stationIdCounter++;
+    const station: Station = { id, ...insertStation };
+    this.stations.set(id, station);
+    return station;
   }
-  
+
   async getAllStations(): Promise<Station[]> {
     return Array.from(this.stations.values());
   }
-  
-  // Route operations
-  async getRoute(id: number): Promise<Route | undefined> {
-    return this.routes.get(id);
-  }
-  
-  async createRoute(route: InsertRoute): Promise<Route> {
-    const id = this.routeId++;
-    const newRoute: Route = { ...route, id };
-    this.routes.set(id, newRoute);
-    return newRoute;
-  }
-  
-  async getFeaturedRoutes(): Promise<Route[]> {
-    return Array.from(this.routes.values()).filter(route => route.featured);
-  }
-  
-  async getAllRoutes(): Promise<Route[]> {
-    return Array.from(this.routes.values());
-  }
-  
-  // TrainSchedule operations
-  async getTrainSchedule(id: number): Promise<TrainSchedule | undefined> {
-    return this.trainSchedules.get(id);
-  }
-  
-  async createTrainSchedule(schedule: InsertTrainSchedule): Promise<TrainSchedule> {
-    const id = this.scheduleId++;
-    const newSchedule: TrainSchedule = { ...schedule, id };
-    this.trainSchedules.set(id, newSchedule);
-    return newSchedule;
-  }
-  
-  async searchTrainSchedules(fromStationId: number, toStationId: number, date: Date): Promise<TrainSchedule[]> {
-    // Find routes that match from and to stations
-    const matchingRoutes = Array.from(this.routes.values())
-      .filter(route => route.departureStationId === fromStationId && route.arrivalStationId === toStationId);
+
+  // Route methods
+  async getRoute(id: number): Promise<RouteWithDetails | undefined> {
+    const route = this.routes.get(id);
+    if (!route) return undefined;
     
-    if (matchingRoutes.length === 0) return [];
+    const train = await this.getTrain(route.trainId);
+    const fromStation = await this.getStation(route.fromStationId);
+    const toStation = await this.getStation(route.toStationId);
     
-    // Find schedules for matching routes on the given date
-    const routeIds = matchingRoutes.map(route => route.id);
+    if (!train || !fromStation || !toStation) return undefined;
     
-    return Array.from(this.trainSchedules.values())
-      .filter(schedule => {
-        // Check if schedule is for one of our matching routes
-        if (!routeIds.includes(schedule.routeId)) return false;
-        
-        // Check if schedule is on the requested date
-        const scheduleDate = new Date(schedule.departureTime);
-        return scheduleDate.toISOString().split('T')[0] === date.toISOString().split('T')[0];
-      });
+    return {
+      ...route,
+      train,
+      fromStation,
+      toStation
+    };
   }
-  
-  async getAllTrainSchedules(): Promise<TrainSchedule[]> {
-    return Array.from(this.trainSchedules.values());
+
+  async createRoute(insertRoute: InsertRoute): Promise<Route> {
+    const id = this.routeIdCounter++;
+    const route: Route = { id, ...insertRoute };
+    this.routes.set(id, route);
+    return route;
   }
-  
-  // Seat operations
+
+  async getRoutesByTrainId(trainId: number): Promise<RouteWithDetails[]> {
+    const matchingRoutes = Array.from(this.routes.values()).filter(
+      (route) => route.trainId === trainId
+    );
+    
+    const routesWithDetails: RouteWithDetails[] = [];
+    
+    for (const route of matchingRoutes) {
+      const routeWithDetails = await this.getRoute(route.id);
+      if (routeWithDetails) {
+        routesWithDetails.push(routeWithDetails);
+      }
+    }
+    
+    return routesWithDetails;
+  }
+
+  async searchRoutes(fromStation: string, toStation: string, date: string): Promise<RouteWithDetails[]> {
+    const fromStationObj = await this.getStationByName(fromStation);
+    const toStationObj = await this.getStationByName(toStation);
+    
+    if (!fromStationObj || !toStationObj) {
+      return [];
+    }
+    
+    const matchingRoutes = Array.from(this.routes.values()).filter(
+      (route) => 
+        route.fromStationId === fromStationObj.id &&
+        route.toStationId === toStationObj.id &&
+        route.date === date
+    );
+    
+    const routesWithDetails: RouteWithDetails[] = [];
+    
+    for (const route of matchingRoutes) {
+      const routeWithDetails = await this.getRoute(route.id);
+      if (routeWithDetails) {
+        routesWithDetails.push(routeWithDetails);
+      }
+    }
+    
+    return routesWithDetails;
+  }
+
+  async getPopularRoutes(): Promise<RouteWithDetails[]> {
+    // In a real app, this would calculate popularity based on bookings
+    // For now, return the first 3 routes
+    const allRoutes = Array.from(this.routes.values()).slice(0, 3);
+    
+    const routesWithDetails: RouteWithDetails[] = [];
+    
+    for (const route of allRoutes) {
+      const routeWithDetails = await this.getRoute(route.id);
+      if (routeWithDetails) {
+        routesWithDetails.push(routeWithDetails);
+      }
+    }
+    
+    return routesWithDetails;
+  }
+
+  // Seat methods
   async getSeat(id: number): Promise<Seat | undefined> {
     return this.seats.get(id);
   }
-  
-  async createSeat(seat: InsertSeat): Promise<Seat> {
-    const id = this.seatId++;
-    const newSeat: Seat = { ...seat, id };
-    this.seats.set(id, newSeat);
-    return newSeat;
+
+  async createSeat(insertSeat: InsertSeat): Promise<Seat> {
+    const id = this.seatIdCounter++;
+    const seat: Seat = { id, ...insertSeat };
+    this.seats.set(id, seat);
+    return seat;
   }
-  
-  async updateSeat(id: number, seatData: Partial<InsertSeat>): Promise<Seat | undefined> {
+
+  async getSeatsByTrainId(trainId: number): Promise<Seat[]> {
+    return Array.from(this.seats.values()).filter(
+      (seat) => seat.trainId === trainId
+    );
+  }
+
+  async updateSeatStatus(id: number, status: string): Promise<Seat> {
     const seat = this.seats.get(id);
-    if (!seat) return undefined;
+    if (!seat) {
+      throw new Error("Seat not found");
+    }
     
-    const updatedSeat: Seat = { ...seat, ...seatData };
+    const updatedSeat = { ...seat, status };
     this.seats.set(id, updatedSeat);
     return updatedSeat;
   }
-  
-  async getAvailableSeatsForTrain(trainId: number, scheduleId: number): Promise<Seat[]> {
-    return Array.from(this.seats.values())
-      .filter(seat => seat.trainId === trainId && seat.isAvailable);
-  }
-  
-  // Booking operations
-  async getBooking(id: number): Promise<Booking | undefined> {
-    return this.bookings.get(id);
-  }
-  
-  async createBooking(booking: InsertBooking): Promise<Booking> {
-    const id = this.bookingId++;
-    const newBooking: Booking = { ...booking, id, bookingDate: new Date() };
-    this.bookings.set(id, newBooking);
-    return newBooking;
-  }
-  
-  async getUserBookings(userId: number): Promise<Booking[]> {
-    return Array.from(this.bookings.values())
-      .filter(booking => booking.userId === userId);
-  }
-  
-  async updateBookingStatus(id: number, status: string): Promise<Booking | undefined> {
+
+  // Booking methods
+  async getBooking(id: number): Promise<BookingWithDetails | undefined> {
     const booking = this.bookings.get(id);
     if (!booking) return undefined;
     
-    const updatedBooking: Booking = { ...booking, status };
+    const route = await this.getRoute(booking.routeId);
+    const seat = await this.getSeat(booking.seatId);
+    const user = await this.getUser(booking.userId);
+    
+    if (!route || !seat || !user) return undefined;
+    
+    return {
+      ...booking,
+      route,
+      seat,
+      user
+    };
+  }
+
+  async createBooking(insertBooking: InsertBooking): Promise<Booking> {
+    const id = this.bookingIdCounter++;
+    const createdAt = new Date();
+    const booking: Booking = { id, ...insertBooking, createdAt };
+    this.bookings.set(id, booking);
+    return booking;
+  }
+
+  async getBookingsByUserId(userId: number): Promise<BookingWithDetails[]> {
+    const matchingBookings = Array.from(this.bookings.values()).filter(
+      (booking) => booking.userId === userId
+    );
+    
+    const bookingsWithDetails: BookingWithDetails[] = [];
+    
+    for (const booking of matchingBookings) {
+      const bookingWithDetails = await this.getBooking(booking.id);
+      if (bookingWithDetails) {
+        bookingsWithDetails.push(bookingWithDetails);
+      }
+    }
+    
+    return bookingsWithDetails;
+  }
+
+  async updateBookingStatus(id: number, status: string): Promise<Booking> {
+    const booking = this.bookings.get(id);
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+    
+    const updatedBooking = { ...booking, status };
     this.bookings.set(id, updatedBooking);
     return updatedBooking;
   }
-  
-  async getAllBookings(): Promise<Booking[]> {
-    return Array.from(this.bookings.values());
-  }
-  
-  // Passenger operations
-  async getPassenger(id: number): Promise<Passenger | undefined> {
-    return this.passengers.get(id);
-  }
-  
-  async createPassenger(passenger: InsertPassenger): Promise<Passenger> {
-    const id = this.passengerId++;
-    const newPassenger: Passenger = { ...passenger, id };
-    this.passengers.set(id, newPassenger);
-    return newPassenger;
-  }
-  
-  async getBookingPassengers(bookingId: number): Promise<Passenger[]> {
-    return Array.from(this.passengers.values())
-      .filter(passenger => passenger.bookingId === bookingId);
+
+  async getAllBookings(): Promise<BookingWithDetails[]> {
+    const allBookings = Array.from(this.bookings.values());
+    
+    const bookingsWithDetails: BookingWithDetails[] = [];
+    
+    for (const booking of allBookings) {
+      const bookingWithDetails = await this.getBooking(booking.id);
+      if (bookingWithDetails) {
+        bookingsWithDetails.push(bookingWithDetails);
+      }
+    }
+    
+    return bookingsWithDetails;
   }
 }
 
+// Export the storage instance
 export const storage = new MemStorage();
